@@ -130,6 +130,7 @@ fun MailWardenApp() {
                             activeId = store.getActiveId()
                             emails = emptyList()
                             status = "Removed ${acct.email}"
+                            if (accounts.isEmpty()) showAddForm = true
                         }) {
                             Text("Remove")
                         }
