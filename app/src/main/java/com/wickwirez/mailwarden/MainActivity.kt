@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,11 +13,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,14 +54,41 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MailWardenApp() {
     val context = LocalContext.current
-    val store = remember { CredentialStore(context) }
+    val store = remember { AccountStore(context) }
     val scope = rememberCoroutineScope()
 
-    var email by remember { mutableStateOf(store.getEmail() ?: "") }
-    var password by remember { mutableStateOf(store.getPassword() ?: "") }
+    var accounts by remember { mutableStateOf(store.getAccounts()) }
+    var activeId by remember { mutableStateOf(store.getActiveId()) }
     var emails by remember { mutableStateOf<List<EmailSummary>>(emptyList()) }
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var showAddForm by remember { mutableStateOf(accounts.isEmpty()) }
+
+    var newProvider by remember { mutableStateOf(Provider.GMAIL) }
+    var newEmail by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var newHost by remember { mutableStateOf("") }
+    var providerMenuOpen by remember { mutableStateOf(false) }
+
+    fun loadInbox(account: Account) {
+        loading = true
+        status = "Connecting to ${account.email}..."
+        emails = emptyList()
+        scope.launch {
+            when (val result = MailRepository.fetchInbox(account)) {
+                is FetchResult.Success -> {
+                    emails = result.emails
+                    status = if (result.emails.isEmpty()) {
+                        "Connected. Inbox is empty."
+                    } else {
+                        "Loaded ${result.emails.size} messages"
+                    }
+                }
+                is FetchResult.Error -> status = "Error: ${result.message}"
+            }
+            loading = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -69,52 +102,129 @@ fun MailWardenApp() {
             fontWeight = FontWeight.Bold
         )
 
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Gmail address") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("App password") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Button(
-            onClick = {
-                val cleanEmail = email.trim()
-                val cleanPassword = password.replace(" ", "")
-                store.save(cleanEmail, cleanPassword)
-                loading = true
-                status = "Connecting..."
-                emails = emptyList()
-                scope.launch {
-                    when (val result = MailRepository.fetchInbox(cleanEmail, cleanPassword)) {
-                        is FetchResult.Success -> {
-                            emails = result.emails
-                            status = if (result.emails.isEmpty()) {
-                                "Connected. Inbox is empty."
-                            } else {
-                                "Loaded ${result.emails.size} messages"
+        if (accounts.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(accounts) { acct ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilterChip(
+                            selected = acct.id == activeId,
+                            onClick = {
+                                activeId = acct.id
+                                store.setActiveId(acct.id)
+                                loadInbox(acct)
+                            },
+                            label = {
+                                Text("${acct.provider.displayName}: ${acct.email}")
                             }
-                        }
-                        is FetchResult.Error -> {
-                            status = "Error: ${result.message}"
+                        )
+                        TextButton(onClick = {
+                            store.removeAccount(acct.id)
+                            accounts = store.getAccounts()
+                            activeId = store.getActiveId()
+                            emails = emptyList()
+                            status = "Removed ${acct.email}"
+                        }) {
+                            Text("Remove")
                         }
                     }
-                    loading = false
                 }
-            },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Connect to Inbox")
+            }
+
+            OutlinedButton(
+                onClick = { showAddForm = !showAddForm },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showAddForm) "Cancel" else "Add another account")
+            }
+        }
+
+        if (showAddForm) {
+            OutlinedButton(
+                onClick = { providerMenuOpen = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Provider: ${newProvider.displayName}")
+            }
+            DropdownMenu(
+                expanded = providerMenuOpen,
+                onDismissRequest = { providerMenuOpen = false }
+            ) {
+                Provider.entries.forEach { p ->
+                    DropdownMenuItem(
+                        text = { Text(p.displayName) },
+                        onClick = {
+                            newProvider = p
+                            providerMenuOpen = false
+                        }
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = newEmail,
+                onValueChange = { newEmail = it },
+                label = { Text("Email address") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (newProvider.needsManualHost) {
+                OutlinedTextField(
+                    value = newHost,
+                    onValueChange = { newHost = it },
+                    label = { Text("IMAP host (e.g. imap.example.com)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            OutlinedTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = { Text("App password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = {
+                    val acct = store.addAccount(
+                        provider = newProvider,
+                        email = newEmail,
+                        appPassword = newPassword,
+                        customImapHost = newHost
+                    )
+                    accounts = store.getAccounts()
+                    activeId = store.getActiveId()
+                    newEmail = ""
+                    newPassword = ""
+                    newHost = ""
+                    showAddForm = false
+                    loadInbox(acct)
+                },
+                enabled = !loading && newEmail.isNotBlank() && newPassword.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Add and Connect")
+            }
+        }
+
+        if (!showAddForm && accounts.isNotEmpty()) {
+            Button(
+                onClick = { store.getActive()?.let { loadInbox(it) } },
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Refresh Inbox")
+            }
         }
 
         if (loading) {

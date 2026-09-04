@@ -22,11 +22,14 @@ sealed class FetchResult {
 object MailRepository {
 
     suspend fun fetchInbox(
-        email: String,
-        appPassword: String,
-        host: String = "imap.gmail.com",
+        account: Account,
         limit: Int = 25
     ): FetchResult = withContext(Dispatchers.IO) {
+        val host = account.imapHost
+        if (host.isBlank()) {
+            return@withContext FetchResult.Error("No IMAP host set for this account")
+        }
+
         var store: Store? = null
         var inbox: Folder? = null
         try {
@@ -41,7 +44,7 @@ object MailRepository {
 
             val session = Session.getInstance(props)
             store = session.getStore("imaps")
-            store.connect(host, email, appPassword)
+            store.connect(host, account.email, account.appPassword)
 
             inbox = store.getFolder("INBOX")
             inbox.open(Folder.READ_ONLY)
