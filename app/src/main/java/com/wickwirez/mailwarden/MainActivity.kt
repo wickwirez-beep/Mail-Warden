@@ -114,6 +114,7 @@ fun MailWardenApp() {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         FilterChip(
+                            modifier = Modifier.weight(1f),
                             selected = acct.id == activeId,
                             onClick = {
                                 activeId = acct.id
