@@ -3,6 +3,9 @@ package com.wickwirez.mailwarden
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -63,6 +66,10 @@ fun MailWardenApp() {
     var status by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var showAddForm by remember { mutableStateOf(accounts.isEmpty()) }
+    var openMail by remember { mutableStateOf<EmailSummary?>(null) }
+    var openBody by remember { mutableStateOf<EmailBody?>(null) }
+    var bodyLoading by remember { mutableStateOf(false) }
+    var bodyError by remember { mutableStateOf("") }
 
     var newProvider by remember { mutableStateOf(Provider.GMAIL) }
     var newEmail by remember { mutableStateOf("") }
@@ -88,6 +95,78 @@ fun MailWardenApp() {
             }
             loading = false
         }
+    }
+
+    val current = openMail
+    if (current != null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    openMail = null
+                    openBody = null
+                    bodyError = ""
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Back to Inbox")
+            }
+
+            Text(
+                text = current.subject,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "From: ${current.sender}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = current.date,
+                style = MaterialTheme.typography.bodySmall
+            )
+            HorizontalDivider()
+
+            if (bodyLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+
+            if (bodyError.isNotEmpty()) {
+                Text(text = "Error: $bodyError")
+            }
+
+            openBody?.let { body ->
+                if (body.links.isNotEmpty()) {
+                    Text(
+                        text = "Links (${body.links.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    body.links.forEach { link ->
+                        Text(
+                            text = link,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    HorizontalDivider()
+                }
+
+                Text(
+                    text = body.text.ifBlank { "(no readable content)" },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+        return
     }
 
     Column(
@@ -239,7 +318,28 @@ fun MailWardenApp() {
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(emails) { mail ->
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            openMail = mail
+                            openBody = null
+                            bodyError = ""
+                            bodyLoading = true
+                            scope.launch {
+                                val acct = store.getActive()
+                                if (acct == null) {
+                                    bodyError = "No active account"
+                                } else {
+                                    when (val r = MailRepository.fetchBody(acct, mail.uid)) {
+                                        is BodyResult.Success -> openBody = r.body
+                                        is BodyResult.Error -> bodyError = r.message
+                                    }
+                                }
+                                bodyLoading = false
+                            }
+                        }
+                ) {
                     Text(
                         text = mail.sender,
                         style = MaterialTheme.typography.labelLarge,

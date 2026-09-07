@@ -6,13 +6,27 @@ import java.util.Properties
 import javax.mail.Folder
 import javax.mail.Session
 import javax.mail.Store
+import javax.mail.UIDFolder
 import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMultipart
+import javax.mail.Part
 
 data class EmailSummary(
+    val uid: Long,
     val subject: String,
     val sender: String,
     val date: String
 )
+
+data class EmailBody(
+    val text: String,
+    val links: List<String>
+)
+
+sealed class BodyResult {
+    data class Success(val body: EmailBody) : BodyResult()
+    data class Error(val message: String) : BodyResult()
+}
 
 sealed class FetchResult {
     data class Success(val emails: List<EmailSummary>) : FetchResult()
@@ -55,9 +69,11 @@ object MailRepository {
             val start = maxOf(1, total - limit + 1)
             val messages = inbox.getMessages(start, total)
 
+            val uidFolder = inbox as UIDFolder
             val results = messages.reversed().map { msg ->
                 val from = (msg.from?.firstOrNull() as? InternetAddress)
                 EmailSummary(
+                    uid = uidFolder.getUID(msg),
                     subject = msg.subject ?: "(no subject)",
                     sender = from?.personal ?: from?.address ?: "(unknown sender)",
                     date = msg.receivedDate?.toString() ?: ""
@@ -72,4 +88,87 @@ object MailRepository {
             try { store?.close() } catch (_: Exception) {}
         }
     }
+
+    suspend fun fetchBody(
+        account: Account,
+        uid: Long
+    ): BodyResult = withContext(Dispatchers.IO) {
+        val host = account.imapHost
+        if (host.isBlank()) {
+            return@withContext BodyResult.Error("No IMAP host set for this account")
+        }
+
+        var store: Store? = null
+        var inbox: Folder? = null
+        try {
+            val props = Properties().apply {
+                put("mail.store.protocol", "imaps")
+                put("mail.imaps.host", host)
+                put("mail.imaps.port", "993")
+                put("mail.imaps.ssl.enable", "true")
+                put("mail.imaps.connectiontimeout", "15000")
+                put("mail.imaps.timeout", "15000")
+            }
+
+            val session = Session.getInstance(props)
+            store = session.getStore("imaps")
+            store.connect(host, account.email, account.appPassword)
+
+            inbox = store.getFolder("INBOX")
+            inbox.open(Folder.READ_ONLY)
+
+            val msg = (inbox as UIDFolder).getMessageByUID(uid)
+                ?: return@withContext BodyResult.Error("Message not found")
+
+            val text = extractText(msg)
+            BodyResult.Success(EmailBody(text = text, links = extractLinks(text)))
+        } catch (e: Exception) {
+            BodyResult.Error(e.message ?: "Unknown error")
+        } finally {
+            try { inbox?.close(false) } catch (_: Exception) {}
+            try { store?.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun extractText(part: Part): String {
+        try {
+            if (part.isMimeType("text/plain")) {
+                return part.content?.toString() ?: ""
+            }
+            if (part.isMimeType("text/html")) {
+                val html = part.content?.toString() ?: ""
+                return html
+                    .replace(Regex("(?s)<(script|style).*?</\\1>"), " ")
+                    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+                    .replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n\n")
+                    .replace(Regex("<[^>]+>"), " ")
+                    .replace("&nbsp;", " ")
+                    .replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace(Regex("[ \\t]{2,}"), " ")
+                    .replace(Regex("\\n{3,}"), "\n\n")
+                    .trim()
+            }
+            if (part.isMimeType("multipart/*")) {
+                val mp = part.content as? MimeMultipart ?: return ""
+                val parts = (0 until mp.count).map { mp.getBodyPart(it) }
+                parts.firstOrNull { it.isMimeType("text/plain") }?.let {
+                    return extractText(it)
+                }
+                return parts.joinToString("\n") { extractText(it) }.trim()
+            }
+        } catch (_: Exception) {
+        }
+        return ""
+    }
+
+    private fun extractLinks(text: String): List<String> =
+        Regex("https?://[^\\s<>\"')\\]]+")
+            .findAll(text)
+            .map { it.value.trimEnd('.', ',', ';', ':') }
+            .distinct()
+            .take(50)
+            .toList()
 }
