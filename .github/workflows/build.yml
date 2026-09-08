@@ -20,6 +20,9 @@ jobs:
         with:
           gradle-version: 8.13
 
+      - name: Write local properties
+        run: echo "SAFE_BROWSING_KEY=${{ secrets.SAFE_BROWSING_KEY }}" > local.properties
+
       - name: Build debug APK
         run: gradle assembleDebug
 
