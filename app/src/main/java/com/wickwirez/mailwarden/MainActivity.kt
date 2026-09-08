@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -37,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -143,6 +146,33 @@ fun MailWardenApp() {
             }
 
             openBody?.let { body ->
+                val v = body.verdict
+                Text(
+                    text = "${v.level.label}  (score ${v.score})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = threatColor(v.level)
+                )
+                if (v.signals.isEmpty()) {
+                    Text(
+                        text = "No warning signs found. Sender authentication passed and nothing suspicious in the content.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    v.signals.forEach { sig ->
+                        Text(
+                            text = "• ${sig.name} (+${sig.points})",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "   ${sig.detail}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                HorizontalDivider()
+
                 if (body.links.isNotEmpty()) {
                     Text(
                         text = "Links (${body.links.size})",
@@ -357,9 +387,24 @@ fun MailWardenApp() {
                         text = mail.date,
                         style = MaterialTheme.typography.bodySmall
                     )
+                    if (mail.verdict.level != ThreatLevel.SAFE) {
+                        AssistChip(
+                            onClick = { },
+                            label = { Text(mail.verdict.level.label) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                labelColor = threatColor(mail.verdict.level)
+                            )
+                        )
+                    }
                     HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
     }
+}
+
+fun threatColor(level: ThreatLevel): Color = when (level) {
+    ThreatLevel.SAFE -> Color(0xFF4CAF50)
+    ThreatLevel.SUSPICIOUS -> Color(0xFFFFA726)
+    ThreatLevel.DANGEROUS -> Color(0xFFC1121F)
 }

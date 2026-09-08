@@ -15,12 +15,14 @@ data class EmailSummary(
     val uid: Long,
     val subject: String,
     val sender: String,
-    val date: String
+    val date: String,
+    val verdict: SpamVerdict = SpamVerdict.UNKNOWN
 )
 
 data class EmailBody(
     val text: String,
-    val links: List<String>
+    val links: List<String>,
+    val verdict: SpamVerdict = SpamVerdict.UNKNOWN
 )
 
 sealed class BodyResult {
@@ -72,11 +74,20 @@ object MailRepository {
             val uidFolder = inbox as UIDFolder
             val results = messages.reversed().map { msg ->
                 val from = (msg.from?.firstOrNull() as? InternetAddress)
+                val subj = msg.subject ?: "(no subject)"
+                val headers = readHeaders(msg)
+                val verdict = SpamScorer.score(
+                    headers = headers,
+                    subject = subj,
+                    body = "",
+                    links = emptyList()
+                )
                 EmailSummary(
                     uid = uidFolder.getUID(msg),
-                    subject = msg.subject ?: "(no subject)",
+                    subject = subj,
                     sender = from?.personal ?: from?.address ?: "(unknown sender)",
-                    date = msg.receivedDate?.toString() ?: ""
+                    date = msg.receivedDate?.toString() ?: "",
+                    verdict = verdict
                 )
             }
 
@@ -121,13 +132,38 @@ object MailRepository {
                 ?: return@withContext BodyResult.Error("Message not found")
 
             val text = extractText(msg)
-            BodyResult.Success(EmailBody(text = text, links = extractLinks(text)))
+            val links = extractLinks(text)
+            val verdict = SpamScorer.score(
+                headers = readHeaders(msg),
+                subject = msg.subject ?: "",
+                body = text,
+                links = links
+            )
+            BodyResult.Success(EmailBody(text = text, links = links, verdict = verdict))
         } catch (e: Exception) {
             BodyResult.Error(e.message ?: "Unknown error")
         } finally {
             try { inbox?.close(false) } catch (_: Exception) {}
             try { store?.close() } catch (_: Exception) {}
         }
+    }
+
+    private fun readHeaders(msg: javax.mail.Message): MessageHeaders {
+        fun first(name: String): String =
+            try { msg.getHeader(name)?.firstOrNull() ?: "" } catch (_: Exception) { "" }
+
+        val fromRaw = first("From")
+        val fromAddr = (msg.from?.firstOrNull() as? InternetAddress)?.address ?: ""
+
+        return MessageHeaders(
+            fromDisplay = fromRaw,
+            fromAddress = fromAddr,
+            replyTo = first("Reply-To"),
+            returnPath = first("Return-Path"),
+            authResults = first("Authentication-Results"),
+            receivedSpf = first("Received-SPF"),
+            listUnsubscribe = first("List-Unsubscribe")
+        )
     }
 
     private fun extractText(part: Part): String {
