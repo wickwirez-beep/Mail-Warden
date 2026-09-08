@@ -3,6 +3,7 @@ package com.wickwirez.mailwarden
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Properties
+import javax.mail.FetchProfile
 import javax.mail.Folder
 import javax.mail.Session
 import javax.mail.Store
@@ -55,7 +56,7 @@ object MailRepository {
                 put("mail.imaps.port", "993")
                 put("mail.imaps.ssl.enable", "true")
                 put("mail.imaps.connectiontimeout", "15000")
-                put("mail.imaps.timeout", "15000")
+                put("mail.imaps.timeout", "45000")
             }
 
             val session = Session.getInstance(props)
@@ -70,6 +71,17 @@ object MailRepository {
 
             val start = maxOf(1, total - limit + 1)
             val messages = inbox.getMessages(start, total)
+
+            val fp = FetchProfile().apply {
+                add(FetchProfile.Item.ENVELOPE)
+                add(UIDFolder.FetchProfileItem.UID)
+                add("Authentication-Results")
+                add("Received-SPF")
+                add("Reply-To")
+                add("Return-Path")
+                add("List-Unsubscribe")
+            }
+            inbox.fetch(messages, fp)
 
             val uidFolder = inbox as UIDFolder
             val results = messages.reversed().map { msg ->
@@ -118,7 +130,7 @@ object MailRepository {
                 put("mail.imaps.port", "993")
                 put("mail.imaps.ssl.enable", "true")
                 put("mail.imaps.connectiontimeout", "15000")
-                put("mail.imaps.timeout", "15000")
+                put("mail.imaps.timeout", "45000")
             }
 
             val session = Session.getInstance(props)
