@@ -41,11 +41,12 @@ object SpamScorer {
         headers: MessageHeaders,
         subject: String,
         body: String,
-        links: List<String>
+        links: List<String>,
+        providerStripsAuth: Boolean = false
     ): SpamVerdict {
         val signals = mutableListOf<Signal>()
 
-        signals += authSignals(headers)
+        signals += authSignals(headers, providerStripsAuth)
         signals += senderSignals(headers)
         signals += contentSignals(subject, body)
         signals += linkSignals(headers, links)
@@ -59,12 +60,14 @@ object SpamScorer {
         return SpamVerdict(total, level, signals.filter { it.points != 0 })
     }
 
-    private fun authSignals(h: MessageHeaders): List<Signal> {
+    private fun authSignals(h: MessageHeaders, providerStripsAuth: Boolean): List<Signal> {
         val out = mutableListOf<Signal>()
         val auth = (h.authResults + " " + h.receivedSpf).lowercase()
 
         if (auth.isBlank()) {
-            out += Signal("Auth: none", 15, "No authentication headers present")
+            if (!providerStripsAuth) {
+                out += Signal("Auth: none", 15, "No authentication headers present")
+            }
             return out
         }
 

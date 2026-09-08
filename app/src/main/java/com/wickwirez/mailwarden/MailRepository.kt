@@ -92,7 +92,9 @@ object MailRepository {
                     headers = headers,
                     subject = subj,
                     body = "",
-                    links = emptyList()
+                    links = emptyList(),
+                    providerStripsAuth = account.provider == Provider.YAHOO ||
+                                         account.provider == Provider.AOL
                 )
                 EmailSummary(
                     uid = uidFolder.getUID(msg),
@@ -145,13 +147,20 @@ object MailRepository {
 
             val text = extractText(msg)
             val links = extractLinks(text)
+            val cleanText = text
+                .replace(Regex("\\[?https?://[^\\s<>\"')\\]]+\\]?"), "")
+                .replace(Regex("[ \\t]{2,}"), " ")
+                .replace(Regex("\\n{3,}"), "\n\n")
+                .trim()
             val verdict = SpamScorer.score(
                 headers = readHeaders(msg),
                 subject = msg.subject ?: "",
                 body = text,
-                links = links
+                links = links,
+                providerStripsAuth = account.provider == Provider.YAHOO ||
+                                     account.provider == Provider.AOL
             )
-            BodyResult.Success(EmailBody(text = text, links = links, verdict = verdict))
+            BodyResult.Success(EmailBody(text = cleanText, links = links, verdict = verdict))
         } catch (e: Exception) {
             BodyResult.Error(e.message ?: "Unknown error")
         } finally {
