@@ -73,6 +73,9 @@ fun MailWardenApp() {
     var openBody by remember { mutableStateOf<EmailBody?>(null) }
     var bodyLoading by remember { mutableStateOf(false) }
     var bodyError by remember { mutableStateOf("") }
+    var checkedLinks by remember { mutableStateOf<List<CheckedLink>>(emptyList()) }
+    var linksChecking by remember { mutableStateOf(false) }
+    var showLinks by remember { mutableStateOf(false) }
 
     var newProvider by remember { mutableStateOf(Provider.GMAIL) }
     var newEmail by remember { mutableStateOf("") }
@@ -174,18 +177,62 @@ fun MailWardenApp() {
                 HorizontalDivider()
 
                 if (body.links.isNotEmpty()) {
-                    Text(
-                        text = "Links (${body.links.size})",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    body.links.forEach { link ->
+                    val unsafe = checkedLinks.count { it.status == LinkStatus.UNSAFE }
+                    val summary = when {
+                        linksChecking -> "Checking ${body.links.size} links..."
+                        unsafe > 0 -> "$unsafe of ${checkedLinks.size} links flagged UNSAFE"
+                        checkedLinks.isNotEmpty() -> "${checkedLinks.size} links checked, none flagged"
+                        else -> "${body.links.size} links"
+                    }
+
+                    OutlinedButton(
+                        onClick = { showLinks = !showLinks },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (showLinks) "Hide links" else summary)
+                    }
+
+                    if (unsafe > 0 && !showLinks) {
                         Text(
-                            text = link,
+                            text = "Tap above to review flagged links.",
                             style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            color = threatColor(ThreatLevel.DANGEROUS)
                         )
+                    }
+
+                    if (showLinks) {
+                        val shown = if (checkedLinks.isNotEmpty()) checkedLinks
+                                    else body.links.map {
+                                        CheckedLink(it, it, "", false)
+                                    }
+                        shown.forEach { link ->
+                            val color = when (link.status) {
+                                LinkStatus.UNSAFE -> threatColor(ThreatLevel.DANGEROUS)
+                                LinkStatus.CLEAN -> threatColor(ThreatLevel.SAFE)
+                                LinkStatus.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text(
+                                text = link.finalHost.ifBlank { link.original },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = color,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (link.status == LinkStatus.UNSAFE) {
+                                Text(
+                                    text = "   Flagged: ${link.threatType}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = color
+                                )
+                            }
+                            if (link.redirected) {
+                                Text(
+                                    text = "   Redirects from ${link.original.take(60)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
                     }
                     HorizontalDivider()
                 }
@@ -355,6 +402,8 @@ fun MailWardenApp() {
                             openMail = mail
                             openBody = null
                             bodyError = ""
+                            checkedLinks = emptyList()
+                            showLinks = false
                             bodyLoading = true
                             scope.launch {
                                 val acct = store.getActive()
@@ -362,7 +411,14 @@ fun MailWardenApp() {
                                     bodyError = "No active account"
                                 } else {
                                     when (val r = MailRepository.fetchBody(acct, mail.uid)) {
-                                        is BodyResult.Success -> openBody = r.body
+                                        is BodyResult.Success -> {
+                                            openBody = r.body
+                                            if (r.body.links.isNotEmpty()) {
+                                                linksChecking = true
+                                                checkedLinks = LinkChecker.check(r.body.links)
+                                                linksChecking = false
+                                            }
+                                        }
                                         is BodyResult.Error -> bodyError = r.message
                                     }
                                 }
