@@ -238,9 +238,7 @@ fun MailWardenApp() {
 
             Button(
                 onClick = {
-                    val addr = Regex("[\\w.+-]+@[\\w.-]+\\.\\w+")
-                        .find(current.sender)?.value ?: ""
-                    composeTo = addr
+                    composeTo = current.senderAddress
                     composeSubject = if (current.subject.startsWith("Re:", true)) {
                         current.subject
                     } else {
