@@ -25,6 +25,12 @@ android {
 
         buildConfigField(
             "String",
+            "VIRUSTOTAL_KEY",
+            "\"${localProps.getProperty("VIRUSTOTAL_KEY", "")}\""
+        )
+
+        buildConfigField(
+            "String",
             "SAFE_BROWSING_KEY",
             "\"${localProps.getProperty("SAFE_BROWSING_KEY", "")}\""
         )
