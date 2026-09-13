@@ -21,6 +21,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.layout.Box
@@ -125,6 +128,37 @@ fun MailWardenApp() {
                 is FetchResult.Error -> status = "Error: ${result.message}"
             }
             loading = false
+        }
+    }
+
+    fun doDelete(mail: EmailSummary) {
+        scope.launch {
+            val acct = store.getActive() ?: return@launch
+            emails = emails.filterNot { it.uid == mail.uid }
+            openMail = null
+            when (val r = MailActions.delete(acct, mail.uid)) {
+                is ActionResult.Success -> status = "Deleted"
+                is ActionResult.Error -> status = "Delete failed: ${r.message}"
+            }
+        }
+    }
+
+    fun doStar(mail: EmailSummary) {
+        scope.launch {
+            val acct = store.getActive() ?: return@launch
+            val newVal = !mail.starred
+            emails = emails.map {
+                if (it.uid == mail.uid) it.copy(starred = newVal) else it
+            }
+            openMail = openMail?.let {
+                if (it.uid == mail.uid) it.copy(starred = newVal) else it
+            }
+            when (val r = MailActions.setFlag(
+                acct, mail.uid, javax.mail.Flags.Flag.FLAGGED, newVal
+            )) {
+                is ActionResult.Success -> status = if (newVal) "Starred" else "Unstarred"
+                is ActionResult.Error -> status = "Star failed: ${r.message}"
+            }
         }
     }
 
@@ -279,6 +313,24 @@ fun MailWardenApp() {
                 text = current.date,
                 style = MaterialTheme.typography.bodySmall
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { doStar(current) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (current.starred) "Unstar" else "Star")
+                }
+                OutlinedButton(
+                    onClick = { doDelete(current) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Delete")
+                }
+            }
 
             Button(
                 onClick = {
@@ -623,7 +675,42 @@ fun MailWardenApp() {
             modifier = Modifier.fillMaxWidth()
         ) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(emails) { mail ->
+            items(emails, key = { it.uid }) { mail ->
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { v ->
+                        when (v) {
+                            SwipeToDismissBoxValue.EndToStart -> { doDelete(mail); true }
+                            SwipeToDismissBoxValue.StartToEnd -> { doStar(mail); false }
+                            else -> false
+                        }
+                    }
+                )
+                SwipeToDismissBox(
+                    state = dismissState,
+                    backgroundContent = {
+                        val isDelete = dismissState.dismissDirection ==
+                            SwipeToDismissBoxValue.EndToStart
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(84.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isDelete) threatColor(ThreatLevel.DANGEROUS)
+                                    else Color(0xFFB08D2E)
+                                )
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = if (isDelete) Alignment.CenterEnd
+                                               else Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = if (isDelete) "DELETE" else "STAR",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                ) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -699,6 +786,13 @@ fun MailWardenApp() {
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
+                                    if (mail.starred) {
+                                        Text(
+                                            text = "★ ",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFFE8B923)
+                                        )
+                                    }
                                     Text(
                                         text = relativeTime(mail.timestamp),
                                         style = MaterialTheme.typography.bodySmall,
@@ -722,6 +816,7 @@ fun MailWardenApp() {
                             }
                         }
                     }
+                }
                 }
             }
         }

@@ -19,6 +19,8 @@ data class EmailSummary(
     val senderAddress: String = "",
     val date: String,
     val timestamp: Long = 0L,
+    val starred: Boolean = false,
+    val unread: Boolean = false,
     val verdict: SpamVerdict = SpamVerdict.UNKNOWN
 )
 
@@ -76,6 +78,7 @@ object MailRepository {
 
             val fp = FetchProfile().apply {
                 add(FetchProfile.Item.ENVELOPE)
+                add(FetchProfile.Item.FLAGS)
                 add(UIDFolder.FetchProfileItem.UID)
                 add("Authentication-Results")
                 add("Received-SPF")
@@ -105,6 +108,8 @@ object MailRepository {
                     senderAddress = from?.address ?: "",
                     date = msg.receivedDate?.toString() ?: "",
                     timestamp = msg.receivedDate?.time ?: 0L,
+                    starred = try { msg.isSet(javax.mail.Flags.Flag.FLAGGED) } catch (_: Exception) { false },
+                    unread = try { !msg.isSet(javax.mail.Flags.Flag.SEEN) } catch (_: Exception) { false },
                     verdict = verdict
                 )
             }
