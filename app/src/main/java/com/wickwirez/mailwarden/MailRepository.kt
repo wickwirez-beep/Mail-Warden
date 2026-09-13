@@ -265,9 +265,14 @@ object MailRepository {
             if (part.isMimeType("multipart/*")) {
                 val mp = part.content as? MimeMultipart ?: return ""
                 val parts = (0 until mp.count).map { mp.getBodyPart(it) }
-                parts.firstOrNull { it.isMimeType("text/plain") }?.let {
-                    return extractText(it)
-                }
+                val plain = parts.firstOrNull { it.isMimeType("text/plain") }
+                    ?.let { extractText(it) } ?: ""
+                if (plain.length >= 120) return plain
+
+                val html = parts.firstOrNull { it.isMimeType("text/html") }
+                    ?.let { extractText(it) } ?: ""
+                if (html.length > plain.length) return html
+                if (plain.isNotBlank()) return plain
                 return parts.joinToString("\n") { extractText(it) }.trim()
             }
         } catch (_: Exception) {
