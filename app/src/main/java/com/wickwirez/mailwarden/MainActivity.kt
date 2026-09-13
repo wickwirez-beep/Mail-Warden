@@ -15,8 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.layout.Box
@@ -406,14 +410,39 @@ fun MailWardenApp() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "Mail Warden",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF7A0B14), Color(0xFFC1121F), Color(0xFF7A0B14))
+                    )
+                )
+                .padding(vertical = 14.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "MAIL WARDEN",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "GUARDING YOUR INBOX",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFE0C0C4),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
 
         if (accounts.isNotEmpty()) {
             val active = accounts.firstOrNull { it.id == activeId } ?: accounts.first()
@@ -577,13 +606,7 @@ fun MailWardenApp() {
                 Text("Compose")
             }
 
-            Button(
-                onClick = { store.getActive()?.let { loadInbox(it) } },
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Refresh Inbox")
-            }
+
         }
 
         if (loading) {
@@ -594,6 +617,11 @@ fun MailWardenApp() {
             Text(text = status, style = MaterialTheme.typography.bodySmall)
         }
 
+        PullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { store.getActive()?.let { loadInbox(it) } },
+            modifier = Modifier.fillMaxWidth()
+        ) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(emails) { mail ->
                 Card(
@@ -696,6 +724,7 @@ fun MailWardenApp() {
                     }
                 }
             }
+        }
         }
     }
 }
