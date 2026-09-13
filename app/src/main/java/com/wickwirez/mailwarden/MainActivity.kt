@@ -14,7 +14,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.AssistChip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -554,7 +574,11 @@ fun MailWardenApp() {
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(emails) { mail ->
-                Column(
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
@@ -585,33 +609,69 @@ fun MailWardenApp() {
                             }
                         }
                 ) {
-                    Text(
-                        text = mail.sender,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = mail.subject,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = mail.date,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    if (mail.verdict.level != ThreatLevel.SAFE) {
-                        AssistChip(
-                            onClick = { },
-                            label = { Text(mail.verdict.level.label) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                labelColor = threatColor(mail.verdict.level)
-                            )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .width(4.dp)
+                                .height(84.dp)
+                                .background(threatColor(mail.verdict.level))
                         )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colorForSender(mail.sender)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = initialsOf(mail.sender),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = mail.sender,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = relativeTime(mail.timestamp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = mail.subject,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (mail.verdict.level != ThreatLevel.SAFE) {
+                                    Text(
+                                        text = mail.verdict.level.label.uppercase(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = threatColor(mail.verdict.level)
+                                    )
+                                }
+                            }
+                        }
                     }
-                    HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                 }
             }
         }
@@ -622,4 +682,41 @@ fun threatColor(level: ThreatLevel): Color = when (level) {
     ThreatLevel.SAFE -> Color(0xFF4CAF50)
     ThreatLevel.SUSPICIOUS -> Color(0xFFFFA726)
     ThreatLevel.DANGEROUS -> Color(0xFFC1121F)
+}
+
+fun relativeTime(millis: Long): String {
+    if (millis <= 0L) return ""
+    val now = System.currentTimeMillis()
+    val diff = now - millis
+    val mins = diff / 60000
+    val hours = diff / 3600000
+    val days = diff / 86400000
+
+    return when {
+        mins < 1 -> "just now"
+        mins < 60 -> "${mins}m ago"
+        hours < 24 -> "${hours}h ago"
+        days < 7 -> "${days}d ago"
+        else -> java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+            .format(java.util.Date(millis))
+    }
+}
+
+fun initialsOf(name: String): String {
+    val clean = name.trim().removePrefix("\"").removeSuffix("\"")
+    if (clean.isBlank()) return "?"
+    val parts = clean.split(" ", ".", "@").filter { it.isNotBlank() }
+    return when {
+        parts.size >= 2 -> "${parts[0].first()}${parts[1].first()}".uppercase()
+        else -> clean.take(2).uppercase()
+    }
+}
+
+fun colorForSender(seed: String): Color {
+    val palette = listOf(
+        Color(0xFF8E3B46), Color(0xFF3B6E8E), Color(0xFF4E7A4E),
+        Color(0xFF7A5C3B), Color(0xFF5C4E7A), Color(0xFF3B7A73)
+    )
+    val idx = (seed.hashCode().let { if (it < 0) -it else it }) % palette.size
+    return palette[idx]
 }
