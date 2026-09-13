@@ -16,6 +16,7 @@ data class EmailSummary(
     val uid: Long,
     val subject: String,
     val sender: String,
+    val senderAddress: String = "",
     val date: String,
     val verdict: SpamVerdict = SpamVerdict.UNKNOWN
 )
@@ -100,6 +101,7 @@ object MailRepository {
                     uid = uidFolder.getUID(msg),
                     subject = subj,
                     sender = from?.personal ?: from?.address ?: "(unknown sender)",
+                    senderAddress = from?.address ?: "",
                     date = msg.receivedDate?.toString() ?: "",
                     verdict = verdict
                 )
