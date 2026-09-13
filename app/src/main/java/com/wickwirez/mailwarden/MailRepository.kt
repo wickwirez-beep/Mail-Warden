@@ -254,6 +254,9 @@ object MailRepository {
 
     private fun extractText(part: Part): String {
         try {
+            if (!part.isMimeType("text/*") && !part.isMimeType("multipart/*")) {
+                return ""
+            }
             if (part.isMimeType("text/plain")) {
                 return part.content?.toString() ?: ""
             }
@@ -288,7 +291,12 @@ object MailRepository {
                     ?.let { extractText(it) } ?: ""
                 if (html.length > plain.length) return html
                 if (plain.isNotBlank()) return plain
-                return parts.joinToString("\n") { extractText(it) }.trim()
+                return parts
+                    .filter {
+                        it.isMimeType("text/*") || it.isMimeType("multipart/*")
+                    }
+                    .joinToString("\n") { extractText(it) }
+                    .trim()
             }
         } catch (_: Exception) {
         }
