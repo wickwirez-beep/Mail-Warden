@@ -45,6 +45,7 @@ object MailRepository {
 
     suspend fun fetchInbox(
         account: Account,
+        folderName: String = "INBOX",
         limit: Int = 25
     ): FetchResult = withContext(Dispatchers.IO) {
         val host = account.imapHost
@@ -68,7 +69,10 @@ object MailRepository {
             store = session.getStore("imaps")
             store.connect(host, account.email, account.appPassword)
 
-            inbox = store.getFolder("INBOX")
+            inbox = store.getFolder(folderName)
+            if (!inbox.exists()) {
+                return@withContext FetchResult.Error("Folder not found: $folderName")
+            }
             inbox.open(Folder.READ_ONLY)
 
             val total = inbox.messageCount
@@ -126,7 +130,8 @@ object MailRepository {
 
     suspend fun fetchBody(
         account: Account,
-        uid: Long
+        uid: Long,
+        folderName: String = "INBOX"
     ): BodyResult = withContext(Dispatchers.IO) {
         val host = account.imapHost
         if (host.isBlank()) {
@@ -149,7 +154,7 @@ object MailRepository {
             store = session.getStore("imaps")
             store.connect(host, account.email, account.appPassword)
 
-            inbox = store.getFolder("INBOX")
+            inbox = store.getFolder(folderName)
             inbox.open(Folder.READ_ONLY)
 
             val msg = (inbox as UIDFolder).getMessageByUID(uid)
