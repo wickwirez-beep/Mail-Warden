@@ -221,7 +221,11 @@ object MailRepository {
     private fun extractAttachments(part: Part, out: MutableList<Attachment>) {
         try {
             val disp = part.disposition
-            val name = part.fileName
+            val name = try {
+                javax.mail.internet.MimeUtility.decodeText(part.fileName ?: "")
+            } catch (_: Exception) {
+                part.fileName
+            }
             if (!name.isNullOrBlank() &&
                 (disp == null || disp.equals(Part.ATTACHMENT, true) ||
                  disp.equals(Part.INLINE, true))) {
