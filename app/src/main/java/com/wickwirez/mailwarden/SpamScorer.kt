@@ -48,7 +48,7 @@ object SpamScorer {
 
         signals += authSignals(headers, providerStripsAuth)
         signals += senderSignals(headers)
-        signals += contentSignals(subject, body, authPassed(headers))
+        signals += contentSignals(subject, body, authPassed(headers) || providerStripsAuth)
         signals += linkSignals(headers, links)
 
         val total = signals.sumOf { it.points }

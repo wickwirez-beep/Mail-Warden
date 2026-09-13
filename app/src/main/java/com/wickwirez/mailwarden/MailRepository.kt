@@ -170,7 +170,7 @@ object MailRepository {
                 providerStripsAuth = account.provider == Provider.YAHOO ||
                                      account.provider == Provider.AOL
             )
-            val displayText = if (cleanText.length < 40 && links.isNotEmpty()) {
+            val displayText = if (cleanText.replace(Regex("\\s+"), "").length < 60 && links.isNotEmpty()) {
                 "(This message is mostly images and links. Use the link list above to see where it points.)"
             } else {
                 cleanText
