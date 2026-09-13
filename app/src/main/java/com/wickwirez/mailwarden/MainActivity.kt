@@ -735,6 +735,7 @@ fun MailWardenApp() {
 
         if (blockedCount > 0 || showBlocked) {
             OutlinedButton(
+                onClick = { showBlocked = !showBlocked },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (showBlocked) "Hide blocked" else "Show blocked ($blockedCount)")
