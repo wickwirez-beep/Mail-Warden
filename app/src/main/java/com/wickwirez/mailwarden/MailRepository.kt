@@ -200,6 +200,10 @@ object MailRepository {
                     .replace(Regex("(?s)<(script|style).*?</\\1>"), " ")
                     .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
                     .replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n\n")
+                    .replace(
+                        Regex("(?is)<a[^>]*>(.*?)</a>"),
+                        "$1"
+                    )
                     .replace(Regex("<[^>]+>"), " ")
                     .replace("&nbsp;", " ")
                     .replace("&amp;", "&")
