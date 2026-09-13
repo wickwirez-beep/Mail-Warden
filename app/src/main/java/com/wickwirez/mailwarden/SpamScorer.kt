@@ -48,7 +48,7 @@ object SpamScorer {
 
         signals += authSignals(headers, providerStripsAuth)
         signals += senderSignals(headers)
-        signals += contentSignals(subject, body)
+        signals += contentSignals(subject, body, authPassed(headers))
         signals += linkSignals(headers, links)
 
         val total = signals.sumOf { it.points }
@@ -139,7 +139,19 @@ object SpamScorer {
         "re-enter your card", "billing information"
     )
 
-    private fun contentSignals(subject: String, body: String): List<Signal> {
+    private fun authPassed(h: MessageHeaders): Boolean {
+        val auth = (h.authResults + " " + h.receivedSpf).lowercase()
+        if (auth.isBlank()) return false
+        val failed = Regex("(spf|dkim|dmarc)=(fail|softfail)").containsMatchIn(auth)
+        val passed = Regex("(spf|dkim|dmarc)=pass").containsMatchIn(auth)
+        return passed && !failed
+    }
+
+    private fun contentSignals(
+        subject: String,
+        body: String,
+        authPassed: Boolean
+    ): List<Signal> {
         val out = mutableListOf<Signal>()
         val text = (subject + " " + body).lowercase()
 
@@ -156,7 +168,7 @@ object SpamScorer {
         if (lures.isNotEmpty()) {
             out += Signal(
                 "Content: reward lure",
-                minOf(lures.size * 10, 30),
+                if (authPassed) minOf(lures.size * 3, 8) else minOf(lures.size * 10, 30),
                 "Prize/money phrases: ${lures.take(3).joinToString(", ")}"
             )
         }

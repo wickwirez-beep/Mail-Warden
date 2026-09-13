@@ -170,12 +170,18 @@ object MailRepository {
                 providerStripsAuth = account.provider == Provider.YAHOO ||
                                      account.provider == Provider.AOL
             )
+            val displayText = if (cleanText.length < 40 && links.isNotEmpty()) {
+                "(This message is mostly images and links. Use the link list above to see where it points.)"
+            } else {
+                cleanText
+            }
+
             val atts = mutableListOf<Attachment>()
             extractAttachments(msg, atts)
 
             BodyResult.Success(
                 EmailBody(
-                    text = cleanText,
+                    text = displayText,
                     links = links,
                     verdict = verdict,
                     attachments = atts
