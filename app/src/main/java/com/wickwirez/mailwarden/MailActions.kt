@@ -21,7 +21,7 @@ object MailActions {
         put("mail.imaps.host", host)
         put("mail.imaps.port", "993")
         put("mail.imaps.ssl.enable", "true")
-        put("mail.imaps.connectiontimeout", "15000")
+        put("mail.imaps.connectiontimeout", "40000")
         put("mail.imaps.timeout", "30000")
     }
 
