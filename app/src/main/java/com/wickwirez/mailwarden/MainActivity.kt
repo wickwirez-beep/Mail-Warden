@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
 fun MailWardenApp() {
     val context = LocalContext.current
     val store = remember { AccountStore(context) }
+    val contacts = remember { ContactStore(context) }
     val scope = rememberCoroutineScope()
 
     var accounts by remember { mutableStateOf(store.getAccounts()) }
@@ -97,6 +98,9 @@ fun MailWardenApp() {
             when (val result = MailRepository.fetchInbox(account)) {
                 is FetchResult.Success -> {
                     emails = result.emails
+                    result.emails.forEach {
+                        contacts.record(it.senderAddress, it.sender)
+                    }
                     status = if (result.emails.isEmpty()) {
                         "Connected. Inbox is empty."
                     } else {
@@ -124,6 +128,9 @@ fun MailWardenApp() {
             )) {
                 is SendResult.Success -> {
                     sendStatus = "Sent"
+                    composeTo.split(",", ";").forEach {
+                        contacts.record(it)
+                    }
                     composeTo = ""
                     composeSubject = ""
                     composeBody = ""
@@ -167,6 +174,28 @@ fun MailWardenApp() {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            val lastTerm = composeTo.substringAfterLast(",").substringAfterLast(";").trim()
+            val suggestions = if (lastTerm.length >= 2 && !lastTerm.contains("@")) {
+                contacts.suggest(lastTerm)
+            } else {
+                emptyList()
+            }
+            suggestions.forEach { c ->
+                TextButton(
+                    onClick = {
+                        val prefix = composeTo.substringBeforeLast(lastTerm, "")
+                        composeTo = prefix + c.address
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = c.display,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
             OutlinedTextField(
                 value = composeSubject,
                 onValueChange = { composeSubject = it },
