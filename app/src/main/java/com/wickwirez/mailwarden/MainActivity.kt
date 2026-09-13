@@ -94,6 +94,8 @@ fun MailWardenApp() {
     var checkedLinks by remember { mutableStateOf<List<CheckedLink>>(emptyList()) }
     var linksChecking by remember { mutableStateOf(false) }
     var showLinks by remember { mutableStateOf(false) }
+    var scannedAtts by remember { mutableStateOf<List<Attachment>>(emptyList()) }
+    var attsScanning by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }
     var composeTo by remember { mutableStateOf("") }
     var composeSubject by remember { mutableStateOf("") }
@@ -362,6 +364,51 @@ fun MailWardenApp() {
             }
 
             openBody?.let { body ->
+                if (body.attachments.isNotEmpty()) {
+                    Text(
+                        text = if (attsScanning) "Scanning attachments..."
+                               else "Attachments (${body.attachments.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val shownAtts = if (scannedAtts.isNotEmpty()) scannedAtts
+                                    else body.attachments
+                    shownAtts.forEach { att ->
+                        val color = when (att.status) {
+                            ScanStatus.MALICIOUS -> threatColor(ThreatLevel.DANGEROUS)
+                            ScanStatus.CLEAN -> threatColor(ThreatLevel.SAFE)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Text(
+                            text = "${att.filename}  ${att.sizeLabel}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = color,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val note = when (att.status) {
+                            ScanStatus.MALICIOUS ->
+                                "   BLOCKED - flagged by ${att.detections} of ${att.totalEngines} engines"
+                            ScanStatus.CLEAN ->
+                                "   Clean (${att.totalEngines} engines)"
+                            ScanStatus.UNKNOWN ->
+                                "   Not seen before - treat with caution"
+                            ScanStatus.UNSCANNED ->
+                                "   Not scanned"
+                        }
+                        Text(text = note, style = MaterialTheme.typography.bodySmall, color = color)
+                        if (att.riskyExtension) {
+                            Text(
+                                text = "   Executable file type",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = threatColor(ThreatLevel.DANGEROUS)
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
+
                 val v = body.verdict
                 Text(
                     text = "${v.level.label}  (score ${v.score})",
@@ -723,6 +770,7 @@ fun MailWardenApp() {
                             openBody = null
                             bodyError = ""
                             checkedLinks = emptyList()
+                            scannedAtts = emptyList()
                             showLinks = false
                             bodyLoading = true
                             scope.launch {
@@ -733,6 +781,11 @@ fun MailWardenApp() {
                                     when (val r = MailRepository.fetchBody(acct, mail.uid)) {
                                         is BodyResult.Success -> {
                                             openBody = r.body
+                                            if (r.body.attachments.isNotEmpty()) {
+                                                attsScanning = true
+                                                scannedAtts = AttachmentScanner.scan(r.body.attachments)
+                                                attsScanning = false
+                                            }
                                             if (r.body.links.isNotEmpty()) {
                                                 linksChecking = true
                                                 checkedLinks = LinkChecker.check(r.body.links)

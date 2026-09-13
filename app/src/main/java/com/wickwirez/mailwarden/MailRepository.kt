@@ -27,7 +27,8 @@ data class EmailSummary(
 data class EmailBody(
     val text: String,
     val links: List<String>,
-    val verdict: SpamVerdict = SpamVerdict.UNKNOWN
+    val verdict: SpamVerdict = SpamVerdict.UNKNOWN,
+    val attachments: List<Attachment> = emptyList()
 )
 
 sealed class BodyResult {
@@ -169,7 +170,17 @@ object MailRepository {
                 providerStripsAuth = account.provider == Provider.YAHOO ||
                                      account.provider == Provider.AOL
             )
-            BodyResult.Success(EmailBody(text = cleanText, links = links, verdict = verdict))
+            val atts = mutableListOf<Attachment>()
+            extractAttachments(msg, atts)
+
+            BodyResult.Success(
+                EmailBody(
+                    text = cleanText,
+                    links = links,
+                    verdict = verdict,
+                    attachments = atts
+                )
+            )
         } catch (e: Exception) {
             BodyResult.Error(e.message ?: "Unknown error")
         } finally {
@@ -194,6 +205,36 @@ object MailRepository {
             receivedSpf = first("Received-SPF"),
             listUnsubscribe = first("List-Unsubscribe")
         )
+    }
+
+    private fun extractAttachments(part: Part, out: MutableList<Attachment>) {
+        try {
+            val disp = part.disposition
+            val name = part.fileName
+            if (!name.isNullOrBlank() &&
+                (disp == null || disp.equals(Part.ATTACHMENT, true) ||
+                 disp.equals(Part.INLINE, true))) {
+                val bytes = try {
+                    part.inputStream.use { it.readBytes() }
+                } catch (_: Exception) {
+                    ByteArray(0)
+                }
+                out += Attachment(
+                    filename = name,
+                    mimeType = part.contentType?.substringBefore(";")?.trim() ?: "",
+                    size = if (bytes.isNotEmpty()) bytes.size else part.size,
+                    sha256 = if (bytes.isNotEmpty()) sha256Of(bytes) else ""
+                )
+                return
+            }
+            if (part.isMimeType("multipart/*")) {
+                val mp = part.content as? MimeMultipart ?: return
+                for (i in 0 until mp.count) {
+                    extractAttachments(mp.getBodyPart(i), out)
+                }
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun extractText(part: Part): String {
