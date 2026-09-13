@@ -99,6 +99,7 @@ fun MailWardenApp() {
     var newPassword by remember { mutableStateOf("") }
     var newHost by remember { mutableStateOf("") }
     var providerMenuOpen by remember { mutableStateOf(false) }
+    var accountMenuOpen by remember { mutableStateOf(false) }
 
     fun loadInbox(account: Account) {
         loading = true
@@ -415,6 +416,27 @@ fun MailWardenApp() {
         )
 
         if (accounts.isNotEmpty()) {
+            val active = accounts.firstOrNull { it.id == activeId } ?: accounts.first()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = { accountMenuOpen = !accountMenuOpen }) {
+                    Text(
+                        text = active.email,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(onClick = { accountMenuOpen = !accountMenuOpen }) {
+                    Text(if (accountMenuOpen) "Close" else "Accounts")
+                }
+            }
+        }
+
+        if (accounts.isNotEmpty() && accountMenuOpen) {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -431,6 +453,7 @@ fun MailWardenApp() {
                             onClick = {
                                 activeId = acct.id
                                 store.setActiveId(acct.id)
+                                accountMenuOpen = false
                                 loadInbox(acct)
                             },
                             label = {
@@ -456,6 +479,15 @@ fun MailWardenApp() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (showAddForm) "Cancel" else "Add another account")
+            }
+        }
+
+        if (accounts.isEmpty() && !showAddForm) {
+            OutlinedButton(
+                onClick = { showAddForm = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Add an account")
             }
         }
 
@@ -693,13 +725,23 @@ fun relativeTime(millis: Long): String {
 }
 
 fun initialsOf(name: String): String {
-    val clean = name.trim().removePrefix("\"").removeSuffix("\"")
+    var clean = name.trim().removePrefix("\"").removeSuffix("\"")
     if (clean.isBlank()) return "?"
-    val parts = clean.split(" ", ".", "@").filter { it.isNotBlank() }
-    return when {
-        parts.size >= 2 -> "${parts[0].first()}${parts[1].first()}".uppercase()
-        else -> clean.take(2).uppercase()
+    clean = clean.substringBefore("@")
+
+    val words = clean.split(" ", "-", "_", ".", ",")
+        .filter { it.isNotBlank() && it.first().isLetterOrDigit() }
+
+    if (words.size >= 2) {
+        return "${words[0].first()}${words[1].first()}".uppercase()
     }
+
+    val single = words.firstOrNull() ?: return "?"
+    val camel = Regex("(?<=[a-z0-9])(?=[A-Z])").split(single)
+    if (camel.size >= 2) {
+        return "${camel[0].first()}${camel[1].first()}".uppercase()
+    }
+    return single.first().uppercase()
 }
 
 fun colorForSender(seed: String): Color {
