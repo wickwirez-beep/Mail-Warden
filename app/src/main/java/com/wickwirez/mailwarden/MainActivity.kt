@@ -79,6 +79,7 @@ fun MailWardenApp() {
     val context = LocalContext.current
     val store = remember { AccountStore(context) }
     val contacts = remember { ContactStore(context) }
+    val blocklist = remember { BlockStore(context) }
     val scope = rememberCoroutineScope()
 
     var accounts by remember { mutableStateOf(store.getAccounts()) }
@@ -96,6 +97,7 @@ fun MailWardenApp() {
     var showLinks by remember { mutableStateOf(false) }
     var scannedAtts by remember { mutableStateOf<List<Attachment>>(emptyList()) }
     var attsScanning by remember { mutableStateOf(false) }
+    var showBlocked by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }
     var composeTo by remember { mutableStateOf("") }
     var composeSubject by remember { mutableStateOf("") }
@@ -331,6 +333,16 @@ fun MailWardenApp() {
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Delete")
+                }
+                OutlinedButton(
+                    onClick = {
+                        blocklist.block(current.senderAddress)
+                        status = "Blocked ${current.senderAddress}"
+                        openMail = null
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Block")
                 }
             }
 
@@ -716,13 +728,26 @@ fun MailWardenApp() {
             Text(text = status, style = MaterialTheme.typography.bodySmall)
         }
 
+        val visibleEmails = if (showBlocked) emails else emails.filterNot {
+            it.verdict.level == ThreatLevel.DANGEROUS || blocklist.isBlocked(it.senderAddress)
+        }
+        val blockedCount = emails.size - visibleEmails.size
+
+        if (blockedCount > 0 || showBlocked) {
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showBlocked) "Hide blocked" else "Show blocked ($blockedCount)")
+            }
+        }
+
         PullToRefreshBox(
             isRefreshing = loading,
             onRefresh = { store.getActive()?.let { loadInbox(it) } },
             modifier = Modifier.fillMaxWidth()
         ) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(emails, key = { it.uid }) { mail ->
+            items(visibleEmails, key = { it.uid }) { mail ->
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { v ->
                         when (v) {
