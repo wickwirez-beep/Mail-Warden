@@ -76,6 +76,12 @@ fun MailWardenApp() {
     var checkedLinks by remember { mutableStateOf<List<CheckedLink>>(emptyList()) }
     var linksChecking by remember { mutableStateOf(false) }
     var showLinks by remember { mutableStateOf(false) }
+    var composing by remember { mutableStateOf(false) }
+    var composeTo by remember { mutableStateOf("") }
+    var composeSubject by remember { mutableStateOf("") }
+    var composeBody by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var sendStatus by remember { mutableStateOf("") }
 
     var newProvider by remember { mutableStateOf(Provider.GMAIL) }
     var newEmail by remember { mutableStateOf("") }
@@ -101,6 +107,99 @@ fun MailWardenApp() {
             }
             loading = false
         }
+    }
+
+    fun doSend() {
+        val acct = store.getActive()
+        if (acct == null) {
+            sendStatus = "No active account"
+            return
+        }
+        sending = true
+        sendStatus = "Sending..."
+        scope.launch {
+            when (val r = MailSender.send(
+                acct,
+                Draft(composeTo, composeSubject, composeBody)
+            )) {
+                is SendResult.Success -> {
+                    sendStatus = "Sent"
+                    composeTo = ""
+                    composeSubject = ""
+                    composeBody = ""
+                    composing = false
+                }
+                is SendResult.Error -> sendStatus = "Error: ${r.message}"
+            }
+            sending = false
+        }
+    }
+
+    if (composing) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = { composing = false },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
+            }
+
+            Text(
+                text = "New Message",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "From: ${store.getActive()?.email ?: "(no account)"}",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            OutlinedTextField(
+                value = composeTo,
+                onValueChange = { composeTo = it },
+                label = { Text("To") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = composeSubject,
+                onValueChange = { composeSubject = it },
+                label = { Text("Subject") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = composeBody,
+                onValueChange = { composeBody = it },
+                label = { Text("Message") },
+                minLines = 8,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = { doSend() },
+                enabled = !sending && composeTo.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Send")
+            }
+
+            if (sending) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+            if (sendStatus.isNotEmpty()) {
+                Text(text = sendStatus, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        return
     }
 
     val current = openMail
@@ -136,6 +235,26 @@ fun MailWardenApp() {
                 text = current.date,
                 style = MaterialTheme.typography.bodySmall
             )
+
+            Button(
+                onClick = {
+                    val addr = Regex("[\\w.+-]+@[\\w.-]+\\.\\w+")
+                        .find(current.sender)?.value ?: ""
+                    composeTo = addr
+                    composeSubject = if (current.subject.startsWith("Re:", true)) {
+                        current.subject
+                    } else {
+                        "Re: ${current.subject}"
+                    }
+                    composeBody = ""
+                    sendStatus = ""
+                    composing = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Reply")
+            }
+
             HorizontalDivider()
 
             if (bodyLoading) {
@@ -376,6 +495,19 @@ fun MailWardenApp() {
         }
 
         if (!showAddForm && accounts.isNotEmpty()) {
+            Button(
+                onClick = {
+                    composeTo = ""
+                    composeSubject = ""
+                    composeBody = ""
+                    sendStatus = ""
+                    composing = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Compose")
+            }
+
             Button(
                 onClick = { store.getActive()?.let { loadInbox(it) } },
                 enabled = !loading,
