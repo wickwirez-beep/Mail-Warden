@@ -102,6 +102,8 @@ fun MailWardenApp() {
     var attsScanning by remember { mutableStateOf(false) }
     var viewingImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var viewingName by remember { mutableStateOf("") }
+    var viewingPages by remember { mutableStateOf<List<android.graphics.Bitmap>>(emptyList()) }
+    var renderingPdf by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         AttachmentVault.purgeOld(context)
@@ -472,12 +474,25 @@ fun MailWardenApp() {
                         if (risk.policy == OpenPolicy.VIEW_IN_APP && att.bytes != null) {
                             OutlinedButton(
                                 onClick = {
-                                    viewingImage = try {
-                                        android.graphics.BitmapFactory.decodeByteArray(
-                                            att.bytes, 0, att.bytes.size
-                                        )
-                                    } catch (_: Exception) { null }
                                     viewingName = att.filename
+                                    if (att.filename.lowercase().endsWith(".pdf")) {
+                                        renderingPdf = true
+                                        scope.launch {
+                                            val pages = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.IO
+                                            ) {
+                                                PdfPreview.render(context, att.bytes)
+                                            }
+                                            viewingPages = pages
+                                            renderingPdf = false
+                                        }
+                                    } else {
+                                        viewingImage = try {
+                                            android.graphics.BitmapFactory.decodeByteArray(
+                                                att.bytes, 0, att.bytes.size
+                                            )
+                                        } catch (_: Exception) { null }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {

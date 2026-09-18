@@ -89,6 +89,14 @@ object AttachmentRiskAssessor {
             )
         }
 
+        if (name.endsWith(".pdf")) {
+            return AttachmentRisk(
+                OpenPolicy.VIEW_IN_APP,
+                "Safe to view here",
+                "Rendered as pages inside Mail Warden. Scripts and embedded actions do not run."
+            )
+        }
+
         if (imageExts.any { name.endsWith(it) }) {
             val note = when {
                 att.status == ScanStatus.CLEAN ->
@@ -119,5 +127,53 @@ object AttachmentRiskAssessor {
             "Opens outside Mail Warden",
             warn.trim()
         )
+    }
+}
+
+object PdfPreview {
+
+    fun render(
+        context: Context,
+        bytes: ByteArray,
+        maxPages: Int = 15
+    ): List<android.graphics.Bitmap> {
+        val out = mutableListOf<android.graphics.Bitmap>()
+        var file: File? = null
+        try {
+            file = File(context.cacheDir, "preview_${System.currentTimeMillis()}.pdf")
+            file.writeBytes(bytes)
+
+            val fd = android.os.ParcelFileDescriptor.open(
+                file,
+                android.os.ParcelFileDescriptor.MODE_READ_ONLY
+            )
+            val renderer = android.graphics.pdf.PdfRenderer(fd)
+            val pages = minOf(renderer.pageCount, maxPages)
+
+            for (i in 0 until pages) {
+                val page = renderer.openPage(i)
+                val scale = 2
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    page.width * scale,
+                    page.height * scale,
+                    android.graphics.Bitmap.Config.ARGB_8888
+                )
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                page.render(
+                    bmp,
+                    null,
+                    null,
+                    android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                )
+                out += bmp
+                page.close()
+            }
+            renderer.close()
+            fd.close()
+        } catch (_: Exception) {
+        } finally {
+            try { file?.delete() } catch (_: Exception) {}
+        }
+        return out
     }
 }

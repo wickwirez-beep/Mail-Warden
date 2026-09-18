@@ -51,10 +51,11 @@ object AttachmentScanner {
                     it.copy(status = ScanStatus.UNSCANNED)
                 }
             }
-            attachments.map { att ->
+            attachments.mapIndexed { i, att ->
                 if (att.sha256.isBlank()) {
                     att.copy(status = ScanStatus.UNSCANNED)
                 } else {
+                    if (i > 0) kotlinx.coroutines.delay(16000)
                     lookup(att, key)
                 }
             }
