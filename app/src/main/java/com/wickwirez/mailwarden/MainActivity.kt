@@ -21,6 +21,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -97,6 +100,12 @@ fun MailWardenApp() {
     var showLinks by remember { mutableStateOf(false) }
     var scannedAtts by remember { mutableStateOf<List<Attachment>>(emptyList()) }
     var attsScanning by remember { mutableStateOf(false) }
+    var viewingImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var viewingName by remember { mutableStateOf("") }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        AttachmentVault.purgeOld(context)
+    }
     var showBlocked by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }
     var composeTo by remember { mutableStateOf("") }
@@ -193,6 +202,46 @@ fun MailWardenApp() {
             }
             sending = false
         }
+    }
+
+    val img = viewingImage
+    if (img != null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = {
+                    viewingImage = null
+                    viewingName = ""
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Close")
+            }
+            Text(
+                text = viewingName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "Displayed inside Mail Warden. This file cannot run code or leave the app.",
+                style = MaterialTheme.typography.bodySmall,
+                color = threatColor(ThreatLevel.SAFE)
+            )
+            Image(
+                bitmap = img.asImageBitmap(),
+                contentDescription = viewingName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        return
     }
 
     if (composing) {
@@ -399,6 +448,42 @@ fun MailWardenApp() {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        val risk = AttachmentRiskAssessor.assess(
+                            att,
+                            senderKnown = contacts.all().any {
+                                it.address.equals(current.senderAddress, true)
+                            },
+                            messageLevel = body.verdict.level
+                        )
+                        Text(
+                            text = "   ${risk.headline}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = when (risk.policy) {
+                                OpenPolicy.BLOCKED -> threatColor(ThreatLevel.DANGEROUS)
+                                OpenPolicy.VIEW_IN_APP -> threatColor(ThreatLevel.SAFE)
+                                OpenPolicy.RELEASE_WITH_WARNING -> threatColor(ThreatLevel.SUSPICIOUS)
+                            }
+                        )
+                        Text(
+                            text = "   ${risk.detail}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (risk.policy == OpenPolicy.VIEW_IN_APP && att.bytes != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewingImage = try {
+                                        android.graphics.BitmapFactory.decodeByteArray(
+                                            att.bytes, 0, att.bytes.size
+                                        )
+                                    } catch (_: Exception) { null }
+                                    viewingName = att.filename
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("View in Mail Warden")
+                            }
+                        }
                         val note = when (att.status) {
                             ScanStatus.MALICIOUS ->
                                 "   BLOCKED - flagged by ${att.detections} of ${att.totalEngines} engines"

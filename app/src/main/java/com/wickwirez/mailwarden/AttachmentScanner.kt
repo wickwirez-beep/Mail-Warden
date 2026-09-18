@@ -16,7 +16,8 @@ data class Attachment(
     val sha256: String = "",
     val status: ScanStatus = ScanStatus.UNKNOWN,
     val detections: Int = 0,
-    val totalEngines: Int = 0
+    val totalEngines: Int = 0,
+    val bytes: ByteArray? = null
 ) {
     val sizeLabel: String
         get() = when {

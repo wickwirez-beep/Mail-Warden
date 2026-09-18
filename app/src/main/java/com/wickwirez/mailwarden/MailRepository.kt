@@ -238,7 +238,8 @@ object MailRepository {
                     filename = name,
                     mimeType = part.contentType?.substringBefore(";")?.trim() ?: "",
                     size = if (bytes.isNotEmpty()) bytes.size else part.size,
-                    sha256 = if (bytes.isNotEmpty()) sha256Of(bytes) else ""
+                    sha256 = if (bytes.isNotEmpty()) sha256Of(bytes) else "",
+                    bytes = if (bytes.isNotEmpty() && bytes.size <= 15 * 1024 * 1024) bytes else null
                 )
                 return
             }
