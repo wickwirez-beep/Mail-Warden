@@ -207,7 +207,7 @@ fun MailWardenApp() {
     }
 
     val img = viewingImage
-    if (img != null) {
+    if (img != null || renderingPdf || viewingPages.isNotEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -219,6 +219,8 @@ fun MailWardenApp() {
                 onClick = {
                     viewingImage = null
                     viewingName = ""
+                    viewingPages = emptyList()
+                    renderingPdf = false
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -236,12 +238,40 @@ fun MailWardenApp() {
                 style = MaterialTheme.typography.bodySmall,
                 color = threatColor(ThreatLevel.SAFE)
             )
-            Image(
-                bitmap = img.asImageBitmap(),
-                contentDescription = viewingName,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth()
-            )
+            when {
+                renderingPdf -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                viewingPages.isNotEmpty() -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(viewingPages) { page ->
+                            Image(
+                                bitmap = page.asImageBitmap(),
+                                contentDescription = viewingName,
+                                contentScale = ContentScale.FillWidth,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+                img != null -> {
+                    Image(
+                        bitmap = img.asImageBitmap(),
+                        contentDescription = viewingName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
         return
     }
