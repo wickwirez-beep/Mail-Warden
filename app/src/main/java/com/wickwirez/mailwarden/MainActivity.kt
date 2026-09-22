@@ -933,25 +933,33 @@ fun MailWardenApp() {
                                 val acct = store.getActive()
                                 if (acct == null) {
                                     bodyError = "No active account"
+                                    bodyLoading = false
                                 } else {
                                     when (val r = MailRepository.fetchBody(acct, mail.uid)) {
                                         is BodyResult.Success -> {
                                             openBody = r.body
+                                            bodyLoading = false
                                             if (r.body.attachments.isNotEmpty()) {
-                                                attsScanning = true
-                                                scannedAtts = AttachmentScanner.scan(r.body.attachments)
-                                                attsScanning = false
+                                                scope.launch {
+                                                    attsScanning = true
+                                                    scannedAtts = AttachmentScanner.scan(r.body.attachments)
+                                                    attsScanning = false
+                                                }
                                             }
                                             if (r.body.links.isNotEmpty()) {
-                                                linksChecking = true
-                                                checkedLinks = LinkChecker.check(r.body.links)
-                                                linksChecking = false
+                                                scope.launch {
+                                                    linksChecking = true
+                                                    checkedLinks = LinkChecker.check(r.body.links)
+                                                    linksChecking = false
+                                                }
                                             }
                                         }
-                                        is BodyResult.Error -> bodyError = r.message
+                                        is BodyResult.Error -> {
+                                            bodyError = r.message
+                                            bodyLoading = false
+                                        }
                                     }
                                 }
-                                bodyLoading = false
                             }
                         }
                 ) {
