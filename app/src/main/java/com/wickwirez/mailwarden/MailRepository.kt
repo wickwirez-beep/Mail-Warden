@@ -43,6 +43,31 @@ sealed class FetchResult {
 
 object MailRepository {
 
+    private val storeCache = java.util.concurrent.ConcurrentHashMap<String, Store>()
+
+    private fun connectedStore(account: Account, host: String, forceFresh: Boolean = false): Store {
+        val key = "${account.email}@$host"
+        if (!forceFresh) {
+            val cached = storeCache[key]
+            if (cached != null && cached.isConnected) {
+                return cached
+            }
+        }
+        val props = Properties().apply {
+            put("mail.store.protocol", "imaps")
+            put("mail.imaps.host", host)
+            put("mail.imaps.port", "993")
+            put("mail.imaps.ssl.enable", "true")
+            put("mail.imaps.connectiontimeout", "40000")
+            put("mail.imaps.timeout", "45000")
+        }
+        val session = Session.getInstance(props)
+        val store = session.getStore("imaps")
+        store.connect(host, account.email, account.appPassword)
+        storeCache[key] = store
+        return store
+    }
+
     suspend fun fetchInbox(
         account: Account,
         folderName: String = "INBOX",
@@ -53,21 +78,9 @@ object MailRepository {
             return@withContext FetchResult.Error("No IMAP host set for this account")
         }
 
-        var store: Store? = null
         var inbox: Folder? = null
         try {
-            val props = Properties().apply {
-                put("mail.store.protocol", "imaps")
-                put("mail.imaps.host", host)
-                put("mail.imaps.port", "993")
-                put("mail.imaps.ssl.enable", "true")
-                put("mail.imaps.connectiontimeout", "40000")
-                put("mail.imaps.timeout", "45000")
-            }
-
-            val session = Session.getInstance(props)
-            store = session.getStore("imaps")
-            store.connect(host, account.email, account.appPassword)
+            val store = connectedStore(account, host)
 
             inbox = store.getFolder(folderName)
             if (!inbox.exists()) {
@@ -121,10 +134,10 @@ object MailRepository {
 
             FetchResult.Success(results)
         } catch (e: Exception) {
+            storeCache.remove("${account.email}@$host")
             FetchResult.Error(e.message ?: "Unknown error")
         } finally {
             try { inbox?.close(false) } catch (_: Exception) {}
-            try { store?.close() } catch (_: Exception) {}
         }
     }
 
@@ -138,21 +151,9 @@ object MailRepository {
             return@withContext BodyResult.Error("No IMAP host set for this account")
         }
 
-        var store: Store? = null
         var inbox: Folder? = null
         try {
-            val props = Properties().apply {
-                put("mail.store.protocol", "imaps")
-                put("mail.imaps.host", host)
-                put("mail.imaps.port", "993")
-                put("mail.imaps.ssl.enable", "true")
-                put("mail.imaps.connectiontimeout", "40000")
-                put("mail.imaps.timeout", "45000")
-            }
-
-            val session = Session.getInstance(props)
-            store = session.getStore("imaps")
-            store.connect(host, account.email, account.appPassword)
+            val store = connectedStore(account, host)
 
             inbox = store.getFolder(folderName)
             inbox.open(Folder.READ_ONLY)
@@ -193,10 +194,10 @@ object MailRepository {
                 )
             )
         } catch (e: Exception) {
+            storeCache.remove("${account.email}@$host")
             BodyResult.Error(e.message ?: "Unknown error")
         } finally {
             try { inbox?.close(false) } catch (_: Exception) {}
-            try { store?.close() } catch (_: Exception) {}
         }
     }
 
