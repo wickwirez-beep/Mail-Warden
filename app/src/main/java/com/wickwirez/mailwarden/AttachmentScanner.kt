@@ -17,7 +17,8 @@ data class Attachment(
     val status: ScanStatus = ScanStatus.UNKNOWN,
     val detections: Int = 0,
     val totalEngines: Int = 0,
-    val bytes: ByteArray? = null
+    val bytes: ByteArray? = null,
+    val partPath: String = ""
 ) {
     val sizeLabel: String
         get() = when {

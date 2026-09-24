@@ -219,7 +219,40 @@ object MailRepository {
         )
     }
 
-    private fun extractAttachments(part: Part, out: MutableList<Attachment>) {
+    suspend fun fetchAttachmentBytes(
+        account: Account,
+        uid: Long,
+        partPath: String,
+        folderName: String = "INBOX"
+    ): ByteArray? = withContext(Dispatchers.IO) {
+        val host = account.imapHost
+        if (host.isBlank()) return@withContext null
+        var inbox: Folder? = null
+        try {
+            val store = connectedStore(account, host)
+            inbox = store.getFolder(folderName)
+            inbox.open(Folder.READ_ONLY)
+            val msg = (inbox as UIDFolder).getMessageByUID(uid)
+                ?: return@withContext null
+            var part: Part = msg
+            if (partPath.isNotEmpty()) {
+                for (idx in partPath.split(".")) {
+                    val mp = part.content as? MimeMultipart
+                        ?: return@withContext null
+                    part = mp.getBodyPart(idx.toInt())
+                }
+            }
+            val bytes = part.inputStream.use { it.readBytes() }
+            if (bytes.isEmpty() || bytes.size > 15 * 1024 * 1024) null else bytes
+        } catch (e: Exception) {
+            storeCache.remove("${account.email}@$host")
+            null
+        } finally {
+            try { inbox?.close(false) } catch (_: Exception) {}
+        }
+    }
+
+    private fun extractAttachments(part: Part, out: MutableList<Attachment>, path: String = "") {
         try {
             val disp = part.disposition
             val name = try {
@@ -230,24 +263,22 @@ object MailRepository {
             if (!name.isNullOrBlank() &&
                 (disp == null || disp.equals(Part.ATTACHMENT, true) ||
                  disp.equals(Part.INLINE, true))) {
-                val bytes = try {
-                    part.inputStream.use { it.readBytes() }
-                } catch (_: Exception) {
-                    ByteArray(0)
-                }
+                val rawSize = try { part.size } catch (_: Exception) { -1 }
+                val enc = try {
+                    (part as? javax.mail.internet.MimePart)?.encoding?.lowercase()
+                } catch (_: Exception) { null }
                 out += Attachment(
                     filename = name,
                     mimeType = part.contentType?.substringBefore(";")?.trim() ?: "",
-                    size = if (bytes.isNotEmpty()) bytes.size else part.size,
-                    sha256 = if (bytes.isNotEmpty()) sha256Of(bytes) else "",
-                    bytes = if (bytes.isNotEmpty() && bytes.size <= 15 * 1024 * 1024) bytes else null
+                    size = if (enc == "base64" && rawSize > 0) rawSize * 3 / 4 else rawSize,
+                    partPath = path
                 )
                 return
             }
             if (part.isMimeType("multipart/*")) {
                 val mp = part.content as? MimeMultipart ?: return
                 for (i in 0 until mp.count) {
-                    extractAttachments(mp.getBodyPart(i), out)
+                    extractAttachments(mp.getBodyPart(i), out, if (path.isEmpty()) "$i" else "$path.$i")
                 }
             }
         } catch (_: Exception) {

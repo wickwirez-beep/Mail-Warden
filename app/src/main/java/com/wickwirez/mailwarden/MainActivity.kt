@@ -501,27 +501,48 @@ fun MailWardenApp() {
                             text = "   ${risk.detail}",
                             style = MaterialTheme.typography.bodySmall
                         )
-                        if (risk.policy == OpenPolicy.VIEW_IN_APP && att.bytes != null) {
+                        if (risk.policy == OpenPolicy.VIEW_IN_APP) {
                             OutlinedButton(
                                 onClick = {
                                     viewingName = att.filename
-                                    if (att.filename.lowercase().endsWith(".pdf")) {
-                                        renderingPdf = true
-                                        scope.launch {
+                                    renderingPdf = true
+                                    scope.launch {
+                                        val data = att.bytes ?: run {
+                                            val a = store.getActive()
+                                            val u = openMail?.uid
+                                            if (a == null || u == null) null
+                                            else MailRepository.fetchAttachmentBytes(
+                                                a, u, att.partPath
+                                            )
+                                        }
+                                        if (data == null) {
+                                            renderingPdf = false
+                                            viewingName = ""
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Couldn't download attachment",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else if (att.filename.lowercase().endsWith(".pdf")) {
                                             val pages = kotlinx.coroutines.withContext(
                                                 kotlinx.coroutines.Dispatchers.IO
                                             ) {
-                                                PdfPreview.render(context, att.bytes)
+                                                PdfPreview.render(context, data)
                                             }
                                             viewingPages = pages
                                             renderingPdf = false
+                                        } else {
+                                            viewingImage = kotlinx.coroutines.withContext(
+                                                kotlinx.coroutines.Dispatchers.Default
+                                            ) {
+                                                try {
+                                                    android.graphics.BitmapFactory.decodeByteArray(
+                                                        data, 0, data.size
+                                                    )
+                                                } catch (_: Exception) { null }
+                                            }
+                                            renderingPdf = false
                                         }
-                                    } else {
-                                        viewingImage = try {
-                                            android.graphics.BitmapFactory.decodeByteArray(
-                                                att.bytes, 0, att.bytes.size
-                                            )
-                                        } catch (_: Exception) { null }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -529,7 +550,7 @@ fun MailWardenApp() {
                                 Text("View in Mail Warden")
                             }
                         }
-                        val note = when (att.status) {
+                        val note = if (attsScanning && att.status == ScanStatus.UNKNOWN) "   Scanning..." else when (att.status) {
                             ScanStatus.MALICIOUS ->
                                 "   BLOCKED - flagged by ${att.detections} of ${att.totalEngines} engines"
                             ScanStatus.CLEAN ->
@@ -940,9 +961,24 @@ fun MailWardenApp() {
                                             openBody = r.body
                                             bodyLoading = false
                                             if (r.body.attachments.isNotEmpty()) {
+                                                scannedAtts = r.body.attachments
+                                                val openedUid = mail.uid
                                                 scope.launch {
                                                     attsScanning = true
-                                                    scannedAtts = AttachmentScanner.scan(r.body.attachments)
+                                                    val filled = r.body.attachments.map { a ->
+                                                        val data = MailRepository.fetchAttachmentBytes(
+                                                            acct, openedUid, a.partPath
+                                                        )
+                                                        if (data == null) a else {
+                                                            val hash = kotlinx.coroutines.withContext(
+                                                                kotlinx.coroutines.Dispatchers.Default
+                                                            ) { sha256Of(data) }
+                                                            a.copy(bytes = data, size = data.size, sha256 = hash)
+                                                        }
+                                                    }
+                                                    if (openMail?.uid == openedUid) scannedAtts = filled
+                                                    val scanned = AttachmentScanner.scan(filled)
+                                                    if (openMail?.uid == openedUid) scannedAtts = scanned
                                                     attsScanning = false
                                                 }
                                             }
