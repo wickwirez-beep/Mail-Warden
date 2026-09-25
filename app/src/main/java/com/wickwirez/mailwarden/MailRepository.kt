@@ -2,6 +2,8 @@ package com.wickwirez.mailwarden
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import java.util.Properties
 import javax.mail.FetchProfile
 import javax.mail.Folder
@@ -46,12 +48,20 @@ object MailRepository {
 
     private val storeCache = java.util.concurrent.ConcurrentHashMap<String, Store>()
     private val bodyCache = java.util.concurrent.ConcurrentHashMap<String, EmailBody>()
+    private val storeUsedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private var prefetchJob: kotlinx.coroutines.Job? = null
+    private val prefetchScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+    )
 
     private fun connectedStore(account: Account, host: String, forceFresh: Boolean = false): Store {
         val key = "${account.email}@$host"
         if (!forceFresh) {
             val cached = storeCache[key]
-            if (cached != null && cached.isConnected) {
+            val usedAt = storeUsedAt[key] ?: 0L
+            val now = System.currentTimeMillis()
+            if (cached != null && (now - usedAt < 60_000 || cached.isConnected)) {
+                storeUsedAt[key] = now
                 return cached
             }
         }
@@ -67,6 +77,7 @@ object MailRepository {
         val store = session.getStore("imaps")
         store.connect(host, account.email, account.appPassword)
         storeCache[key] = store
+        storeUsedAt[key] = System.currentTimeMillis()
         return store
     }
 
@@ -134,6 +145,15 @@ object MailRepository {
                 )
             }
 
+            prefetchJob?.cancel()
+            val topUids = results.take(10).map { it.uid }
+            prefetchJob = prefetchScope.launch {
+                for (u in topUids) {
+                    if (!isActive) break
+                    if (bodyCache.containsKey("${account.email}|$folderName|$u")) continue
+                    fetchBody(account, u, folderName)
+                }
+            }
             FetchResult.Success(results)
         } catch (e: Exception) {
             storeCache.remove("${account.email}@$host")
