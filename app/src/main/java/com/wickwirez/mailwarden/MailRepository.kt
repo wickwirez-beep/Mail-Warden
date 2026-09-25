@@ -28,7 +28,8 @@ data class EmailBody(
     val text: String,
     val links: List<String>,
     val verdict: SpamVerdict = SpamVerdict.UNKNOWN,
-    val attachments: List<Attachment> = emptyList()
+    val attachments: List<Attachment> = emptyList(),
+    val timing: String = ""
 )
 
 sealed class BodyResult {
@@ -153,15 +154,20 @@ object MailRepository {
 
         var inbox: Folder? = null
         try {
+            val tStart = System.currentTimeMillis()
             val store = connectedStore(account, host)
+            val tConn = System.currentTimeMillis()
 
             inbox = store.getFolder(folderName)
             inbox.open(Folder.READ_ONLY)
+            val tOpen = System.currentTimeMillis()
 
             val msg = (inbox as UIDFolder).getMessageByUID(uid)
                 ?: return@withContext BodyResult.Error("Message not found")
+            val tFind = System.currentTimeMillis()
 
             val text = extractText(msg)
+            val tText = System.currentTimeMillis()
             val links = extractLinks(text)
             val cleanText = text
                 .replace(Regex("\\[?https?://[^\\s<>\"')\\]]+\\]?"), "")
@@ -182,15 +188,18 @@ object MailRepository {
                 cleanText
             }
 
+            val tHdr = System.currentTimeMillis()
             val atts = mutableListOf<Attachment>()
             extractAttachments(msg, atts)
+            val tAtt = System.currentTimeMillis()
 
             BodyResult.Success(
                 EmailBody(
                     text = displayText,
                     links = links,
                     verdict = verdict,
-                    attachments = atts
+                    attachments = atts,
+                    timing = "conn ${tConn - tStart}, open ${tOpen - tConn}, find ${tFind - tOpen}, text ${tText - tFind}, hdr ${tHdr - tText}, att ${tAtt - tHdr}"
                 )
             )
         } catch (e: Exception) {

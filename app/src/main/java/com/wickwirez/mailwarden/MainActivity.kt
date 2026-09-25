@@ -950,6 +950,7 @@ fun MailWardenApp() {
                             scannedAtts = emptyList()
                             showLinks = false
                             bodyLoading = true
+                            val tapAt = System.currentTimeMillis()
                             scope.launch {
                                 val acct = store.getActive()
                                 if (acct == null) {
@@ -960,6 +961,11 @@ fun MailWardenApp() {
                                         is BodyResult.Success -> {
                                             openBody = r.body
                                             bodyLoading = false
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Total ${System.currentTimeMillis() - tapAt}ms: ${r.body.timing}",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
                                             if (r.body.attachments.isNotEmpty()) {
                                                 scannedAtts = r.body.attachments
                                                 val openedUid = mail.uid
