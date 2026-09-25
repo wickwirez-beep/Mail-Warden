@@ -45,6 +45,7 @@ sealed class FetchResult {
 object MailRepository {
 
     private val storeCache = java.util.concurrent.ConcurrentHashMap<String, Store>()
+    private val bodyCache = java.util.concurrent.ConcurrentHashMap<String, EmailBody>()
 
     private fun connectedStore(account: Account, host: String, forceFresh: Boolean = false): Store {
         val key = "${account.email}@$host"
@@ -152,6 +153,11 @@ object MailRepository {
             return@withContext BodyResult.Error("No IMAP host set for this account")
         }
 
+        val cacheKey = "${account.email}|$folderName|$uid"
+        bodyCache[cacheKey]?.let {
+            return@withContext BodyResult.Success(it.copy(timing = "cached"))
+        }
+
         var inbox: Folder? = null
         try {
             val tStart = System.currentTimeMillis()
@@ -164,6 +170,16 @@ object MailRepository {
 
             val msg = (inbox as UIDFolder).getMessageByUID(uid)
                 ?: return@withContext BodyResult.Error("Message not found")
+            inbox.fetch(arrayOf(msg), FetchProfile().apply {
+                add(FetchProfile.Item.ENVELOPE)
+                add(FetchProfile.Item.CONTENT_INFO)
+                add("From")
+                add("Authentication-Results")
+                add("Received-SPF")
+                add("Reply-To")
+                add("Return-Path")
+                add("List-Unsubscribe")
+            })
             val tFind = System.currentTimeMillis()
 
             val text = extractText(msg)
@@ -193,15 +209,16 @@ object MailRepository {
             extractAttachments(msg, atts)
             val tAtt = System.currentTimeMillis()
 
-            BodyResult.Success(
-                EmailBody(
-                    text = displayText,
-                    links = links,
-                    verdict = verdict,
-                    attachments = atts,
-                    timing = "conn ${tConn - tStart}, open ${tOpen - tConn}, find ${tFind - tOpen}, text ${tText - tFind}, hdr ${tHdr - tText}, att ${tAtt - tHdr}"
-                )
+            val body = EmailBody(
+                text = displayText,
+                links = links,
+                verdict = verdict,
+                attachments = atts,
+                timing = "c${tConn - tStart} o${tOpen - tConn} f${tFind - tOpen} t${tText - tFind} h${tHdr - tText} x${tAtt - tHdr}"
             )
+            if (bodyCache.size > 50) bodyCache.clear()
+            bodyCache[cacheKey] = body
+            BodyResult.Success(body)
         } catch (e: Exception) {
             storeCache.remove("${account.email}@$host")
             BodyResult.Error(e.message ?: "Unknown error")

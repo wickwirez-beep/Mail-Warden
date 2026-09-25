@@ -953,6 +953,7 @@ fun MailWardenApp() {
                             val tapAt = System.currentTimeMillis()
                             scope.launch {
                                 val acct = store.getActive()
+                                val acctMs = System.currentTimeMillis() - tapAt
                                 if (acct == null) {
                                     bodyError = "No active account"
                                     bodyLoading = false
@@ -963,7 +964,7 @@ fun MailWardenApp() {
                                             bodyLoading = false
                                             android.widget.Toast.makeText(
                                                 context,
-                                                "Total ${System.currentTimeMillis() - tapAt}ms: ${r.body.timing}",
+                                                "T${System.currentTimeMillis() - tapAt} a$acctMs ${r.body.timing}",
                                                 android.widget.Toast.LENGTH_LONG
                                             ).show()
                                             if (r.body.attachments.isNotEmpty()) {
