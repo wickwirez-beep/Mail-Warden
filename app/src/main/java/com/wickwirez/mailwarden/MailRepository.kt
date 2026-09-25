@@ -202,9 +202,10 @@ object MailRepository {
             })
             val tFind = System.currentTimeMillis()
 
-            val text = extractText(msg)
+            val hrefs = mutableListOf<String>()
+            val text = extractText(msg, hrefs)
             val tText = System.currentTimeMillis()
-            val links = extractLinks(text)
+            val links = (hrefs + extractLinks(text)).distinct().take(50)
             val cleanText = text
                 .replace(Regex("\\[?https?://[^\\s<>\"')\\]]+\\]?"), "")
                 .replace(Regex("[ \\t]{2,}"), " ")
@@ -331,55 +332,83 @@ object MailRepository {
         }
     }
 
-    private fun extractText(part: Part): String {
-        try {
-            if (!part.isMimeType("text/*") && !part.isMimeType("multipart/*")) {
-                return ""
+    private fun readTextPart(p: Part?): String {
+        if (p == null) return ""
+        return try {
+            when (val c = p.content) {
+                is String -> c
+                is java.io.InputStream -> c.use { String(it.readBytes(), Charsets.UTF_8) }
+                else -> c?.toString() ?: ""
             }
-            if (part.isMimeType("text/plain")) {
-                return part.content?.toString() ?: ""
-            }
-            if (part.isMimeType("text/html")) {
-                val html = part.content?.toString() ?: ""
-                return html
-                    .replace(Regex("(?s)<(script|style).*?</\\1>"), " ")
-                    .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-                    .replace(Regex("</p>", RegexOption.IGNORE_CASE), "\n\n")
-                    .replace(
-                        Regex("(?is)<a[^>]*>(.*?)</a>"),
-                        "$1"
-                    )
-                    .replace(Regex("<[^>]+>"), " ")
-                    .replace("&nbsp;", " ")
-                    .replace("&amp;", "&")
-                    .replace("&lt;", "<")
-                    .replace("&gt;", ">")
-                    .replace("&quot;", "\"")
-                    .replace(Regex("[ \\t]{2,}"), " ")
-                    .replace(Regex("\\n{3,}"), "\n\n")
-                    .trim()
-            }
-            if (part.isMimeType("multipart/*")) {
-                val mp = part.content as? MimeMultipart ?: return ""
-                val parts = (0 until mp.count).map { mp.getBodyPart(it) }
-                val plain = parts.firstOrNull { it.isMimeType("text/plain") }
-                    ?.let { extractText(it) } ?: ""
-                if (plain.length >= 120) return plain
+        } catch (_: Exception) {
+            ""
+        }
+    }
 
-                val html = parts.firstOrNull { it.isMimeType("text/html") }
-                    ?.let { extractText(it) } ?: ""
-                if (html.length > plain.length) return html
-                if (plain.isNotBlank()) return plain
-                return parts
-                    .filter {
-                        it.isMimeType("text/*") || it.isMimeType("multipart/*")
-                    }
-                    .joinToString("\n") { extractText(it) }
-                    .trim()
+    private fun findTextPart(part: Part, mime: String): Part? {
+        try {
+            val disp = part.disposition
+            if (disp != null && disp.equals(Part.ATTACHMENT, true)) return null
+            if (part.isMimeType(mime)) return part
+            if (part.isMimeType("multipart/*")) {
+                val mp = part.content as? MimeMultipart ?: return null
+                for (i in 0 until mp.count) {
+                    val found = findTextPart(mp.getBodyPart(i), mime)
+                    if (found != null) return found
+                }
             }
         } catch (_: Exception) {
         }
-        return ""
+        return null
+    }
+
+    private fun extractText(part: Part, hrefs: MutableList<String> = mutableListOf()): String {
+        val plain = readTextPart(findTextPart(part, "text/plain")).trim()
+        if (plain.length >= 120) return plain
+        val raw = readTextPart(findTextPart(part, "text/html"))
+        val html = if (raw.isNotBlank()) cleanHtml(raw, hrefs) else ""
+        return if (html.length > plain.length) html else plain
+    }
+
+    private fun decodeEntity(code: String, radix: Int): String =
+        try {
+            String(Character.toChars(code.toInt(radix)))
+        } catch (_: Exception) {
+            " "
+        }
+
+    private fun cleanHtml(raw: String, hrefs: MutableList<String>): String {
+        Regex("(?i)href\\s*=\\s*[\"']?(https?://[^\"'\\s>]+)")
+            .findAll(raw)
+            .forEach { hrefs += it.groupValues[1].replace("&amp;", "&") }
+        return raw
+            .replace(Regex("(?s)<!--.*?-->"), " ")
+            .replace(Regex("(?is)<head[^>]*>.*?</head>"), " ")
+            .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("(?i)<br\\s*/?>"), "\n")
+            .replace(Regex("(?i)</(p|div|tr|table|h[1-6]|li)>"), "\n")
+            .replace(Regex("<[^>]+>"), " ")
+            .replace(Regex("&#[xX]([0-9a-fA-F]+);")) { decodeEntity(it.groupValues[1], 16) }
+            .replace(Regex("&#(\\d+);")) { decodeEntity(it.groupValues[1], 10) }
+            .replace("&nbsp;", " ")
+            .replace("&zwnj;", "")
+            .replace("&rsquo;", "'")
+            .replace("&lsquo;", "'")
+            .replace("&rdquo;", "\"")
+            .replace("&ldquo;", "\"")
+            .replace("&mdash;", "-")
+            .replace("&ndash;", "-")
+            .replace("&copy;", "(c)")
+            .replace("&reg;", "(R)")
+            .replace("&trade;", "(TM)")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
+            .replace(Regex("[ \\t\\u00A0\\u200B\\u200C\\u034F]+"), " ")
+            .replace(Regex(" *\\n *"), "\n")
+            .replace(Regex("\\n{3,}"), "\n\n")
+            .trim()
     }
 
     private fun extractLinks(text: String): List<String> =
